@@ -1,7 +1,7 @@
 from __future__ import annotations
 import typing as t
 from random import Random
-from .common import faker_wordlist
+from .common import faker_wordlist, Seq
 from . import models as m
 
 T = t.TypeVar("T")
@@ -55,15 +55,15 @@ def word() -> RandGen[str]:
     return fn
 
 
-def batch(gen: RandGen[T], size: int, unique: bool = False) -> RandGen[t.List[T]]:
-    def fn(state: RandState) -> t.List[T]:
+def batch(gen: RandGen[T], size: int, unique: bool = False) -> RandGen[Seq[T]]:
+    def fn(state: RandState) -> Seq[T]:
         local_gen = local_unique(gen) if unique else gen
-        return [local_gen(state) for _ in range(size)]
+        return tuple([local_gen(state) for _ in range(size)])
     return fn
 
 
-def vbatch(gen: RandGen[T], min_size: int, max_size: int, unique: bool = False) -> RandGen[t.List[T]]:
-    def fn(state: RandState) -> t.List[T]:
+def vbatch(gen: RandGen[T], min_size: int, max_size: int, unique: bool = False) -> RandGen[Seq[T]]:
+    def fn(state: RandState) -> Seq[T]:
         return batch(gen, state.rnd.randint(min_size, max_size), unique)(state)
     return fn
 
@@ -115,8 +115,9 @@ def unique(gen: RandGen[T]) -> RandGen[T]:
 def sentence(n_words: int = 6, wordgen: RandGen[str] = word()) -> RandGen[str]:
     def fn(state: RandState) -> str:
         words = batch(wordgen, n_words)(state)
-        words[0] = words[0].title()
-        return " ".join(words) + "."
+        head = words[0].title()
+        tail = words[1:]
+        return " ".join([head, *tail]) + "."
     return fn
 
 
@@ -148,7 +149,7 @@ def varname(
 ) -> RandGen[str]:
     def fn(state: RandState) -> str:
         return joiner(batch(wordgen, state.rnd.randint(1, max_words))(state))
-    return unique(fn)
+    return fn
 
 
 ##################################################################
@@ -179,7 +180,7 @@ def integer_field_type(
     minimum: RandGen[t.Optional[int]] = maybe(integer()),
     maximum: RandGen[t.Optional[int]] = maybe(integer()),
     missingValues: RandGen[
-        t.Optional[t.Sequence[str]]
+        t.Optional[Seq[str]]
     ] = maybe(vbatch(enum_level_name(), 0, 3, unique=True)),
 ) -> RandGen[m.IntegerFieldType]:
     def fn(state: RandState) -> m.IntegerFieldType:
@@ -242,31 +243,31 @@ def enum_integer_levels(
     label: RandGen[t.Optional[str]] = maybe(enum_level_name()),
     missingValues: t.Sequence[str] = [],
     no_label_prob: float = 0.5,
-) -> RandGen[t.Sequence[m.EnumIntegerLevel]]:
-    def fn(state: RandState) -> t.Sequence[m.EnumIntegerLevel]:
+) -> RandGen[Seq[m.EnumIntegerLevel]]:
+    def fn(state: RandState) -> Seq[m.EnumIntegerLevel]:
         values = (
             *range(*value_range(state)),
             *missingValues
         )
         if state.rnd.random() < no_label_prob:
-            return [m.EnumIntegerLevel(value) for value in values]
+            return tuple([m.EnumIntegerLevel(value) for value in values])
         else:
             local_label = local_unique(label)
-            return [
+            return tuple([
                 m.EnumIntegerLevel(value, label=local_label(state))
                 for value in values
-            ]
+            ])
 
     return fn
 
 
 def enum_integer_field_type(
-    levels: RandGen[t.Sequence[m.EnumIntegerLevel]] = enum_integer_levels(),
+    levels: RandGen[Seq[m.EnumIntegerLevel]] = enum_integer_levels(),
     required: RandGen[t.Optional[bool]] = maybe(boolean()),
     unique: RandGen[t.Optional[bool]] = maybe(boolean()),
     ordered: RandGen[t.Optional[bool]] = maybe(boolean()),
     missingValues: RandGen[
-        t.Optional[t.Sequence[str]]
+        t.Optional[Seq[str]]
     ] = maybe(vbatch(missing_value(), 0, 3, unique=True)),
 ) -> RandGen[m.EnumIntegerFieldType]:
     def fn(state: RandState) -> m.EnumIntegerFieldType:
@@ -286,7 +287,7 @@ def number_field_type(
     minimum: RandGen[t.Optional[float]] = maybe(number()),
     maximum: RandGen[t.Optional[float]] = maybe(number()),
     missingValues: RandGen[
-        t.Optional[t.Sequence[str]]
+        t.Optional[Seq[str]]
     ] = maybe(vbatch(missing_value(), 0, 3, unique=True)),
 ) -> RandGen[m.NumberFieldType]:
     def fn(state: RandState) -> m.NumberFieldType:
@@ -311,7 +312,7 @@ def string_field_type(
     maxLength: RandGen[t.Optional[int]] = maybe(integer(0, 10)),
     pattern: RandGen[t.Optional[str]] = maybe(pattern_constraint()),
     missingValues: RandGen[
-        t.Optional[t.Sequence[str]]
+        t.Optional[Seq[str]]
     ] = maybe(vbatch(missing_value(), 0, 3, unique=True)),
 ) -> RandGen[m.StringFieldType]:
     def fn(state: RandState) -> m.StringFieldType:
@@ -333,14 +334,14 @@ def string_field_type(
 
 
 def enum_string_field_type(
-    levels: RandGen[t.Sequence[str]] = vbatch(
+    levels: RandGen[Seq[str]] = vbatch(
         enum_level_name(), 2, 5, unique=True
     ),
     required: RandGen[t.Optional[bool]] = maybe(boolean()),
     unique: RandGen[t.Optional[bool]] = maybe(boolean()),
     ordered: RandGen[t.Optional[bool]] = maybe(boolean()),
     missingValues: RandGen[
-        t.Optional[t.Sequence[str]]
+        t.Optional[Seq[str]]
     ] = maybe(vbatch(missing_value(), 0, 3, unique=True)),
 ) -> RandGen[m.EnumStringFieldType]:
     def fn(state: RandState) -> m.EnumStringFieldType:
@@ -350,5 +351,66 @@ def enum_string_field_type(
             unique=unique(state),
             ordered=ordered(state),
             missingValues=missingValues(state),
+        )
+    return fn
+
+
+FieldTypeStr = t.Literal[
+    "INTEGER", "ENUM_INTEGER", "NUMBER", "STRING", "ENUM_STRING",
+]
+
+FIELD_TYPE_STR = t.cast(t.Tuple[FieldTypeStr, ...], t.get_args(FieldTypeStr))
+
+
+def field(
+    meta: RandGen[m.FieldMeta] = field_meta(),
+    typ: FieldTypeStr | RandGen[m.FieldT] | t.Literal["RANDOM"] = "RANDOM",
+) -> RandGen[m.Field[m.FieldType]]:
+    def fn(state: RandState) -> m.Field[m.FieldType]:
+        t = state.rnd.choice(FIELD_TYPE_STR) if typ == "RANDOM" else typ
+        match t:
+            case "INTEGER":
+                tgen = integer_field_type()
+            case "ENUM_INTEGER":
+                tgen = enum_integer_field_type()
+            case "NUMBER":
+                tgen = number_field_type()
+            case "STRING":
+                tgen = string_field_type()
+            case "ENUM_STRING":
+                tgen = enum_string_field_type()
+            case _:
+                tgen = t
+        return m.Field(
+            meta=meta(state),
+            type=tgen(state),
+        )
+    return fn
+
+
+def assorted_measure(
+    name: RandGen[str] = varname(),
+    items: RandGen[Seq[m.Field[m.FieldType]]] = vbatch(
+        field(), 5, 15, unique=True,
+    ),
+):
+    def fn(state: RandState) -> m.Measure:
+        return m.Measure(
+            name=name(state),
+            items=items(state),
+        )
+    return fn
+
+
+def likert_measure(
+    name: RandGen[str] = unique(map_rg(varname(), lambda s: s + "Item")),
+    items: RandGen[Seq[m.Field[m.FieldType]]] = vbatch(
+        field(typ="ENUM_INTEGER"), 10, 20, unique=True,
+    ),
+):
+    def fn(state: RandState) -> m.Measure:
+        return m.Measure(
+            name=name(state),
+            items=items(state),
         )
     return fn

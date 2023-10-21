@@ -14,3 +14,8 @@ def faker_wordlist(locale: str) -> t.Sequence[str]:
     module_path = ".".join(["faker", "providers", "lorem", locale])
     module = import_module(module_path)
     return module.Provider.word_list
+
+
+_T = t.TypeVar("_T")
+
+Seq = t.Tuple[_T, ...]
