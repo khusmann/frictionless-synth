@@ -69,7 +69,24 @@ class Field(t.Generic[FieldT]):
     type: FieldT
 
 
-class Measure(t.NamedTuple):
+class FieldGroup(t.NamedTuple):
     name: str
     items: Seq[Field[FieldType]]
     # TODO: composites
+
+
+class TableSchema(t.NamedTuple):
+    fields: Seq[Field[FieldType] | FieldGroup]
+    missingValues: t.Optional[Seq[str]] = None
+
+
+class TableResource(t.NamedTuple):
+    name: str
+    description: t.Optional[str]
+    schema: TableSchema
+
+
+class Package(t.NamedTuple):
+    name: str
+    description: t.Optional[str]
+    resources: Seq[TableResource]

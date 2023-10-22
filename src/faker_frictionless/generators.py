@@ -6,6 +6,8 @@ from . import models as m
 
 T = t.TypeVar("T")
 P = t.TypeVar("P")
+S = t.TypeVar("S")
+U = t.TypeVar("U")
 
 T_num = t.TypeVar("T_num", int, float)
 
@@ -22,6 +24,10 @@ class RandState(t.NamedTuple):
 
 
 RandGen = t.Callable[[RandState], T]
+
+########################
+# Primitive & Combinator Generators
+########################
 
 
 def integer(min: int = -1000, max: int = 1000) -> RandGen[int]:
@@ -62,13 +68,43 @@ def batch(gen: RandGen[T], size: int, unique: bool = False) -> RandGen[Seq[T]]:
     return fn
 
 
+def seq(gen: Seq[RandGen[T]]) -> RandGen[Seq[T]]:
+    def fn(state: RandState) -> Seq[T]:
+        return tuple([g(state) for g in gen])
+    return fn
+
+
+def seq1(gen1: RandGen[T]) -> RandGen[t.Tuple[T]]:
+    def fn(state: RandState) -> t.Tuple[T]:
+        return (gen1(state),)
+    return fn
+
+
+def seq2(gen1: RandGen[T], gen2: RandGen[P]) -> RandGen[t.Tuple[T, P]]:
+    def fn(state: RandState) -> t.Tuple[T, P]:
+        return (gen1(state), gen2(state))
+    return fn
+
+
+def seq3(gen1: RandGen[T], gen2: RandGen[P], gen3: RandGen[S]) -> RandGen[t.Tuple[T, P, S]]:
+    def fn(state: RandState) -> t.Tuple[T, P, S]:
+        return (gen1(state), gen2(state), gen3(state))
+    return fn
+
+
+def seq4(gen1: RandGen[T], gen2: RandGen[P], gen3: RandGen[S], gen4: RandGen[U]) -> RandGen[t.Tuple[T, P, S, U]]:
+    def fn(state: RandState) -> t.Tuple[T, P, S, U]:
+        return (gen1(state), gen2(state), gen3(state), gen4(state))
+    return fn
+
+
 def vbatch(gen: RandGen[T], min_size: int, max_size: int, unique: bool = False) -> RandGen[Seq[T]]:
     def fn(state: RandState) -> Seq[T]:
         return batch(gen, state.rnd.randint(min_size, max_size), unique)(state)
     return fn
 
 
-def map_rg(gen: RandGen[T], map_fn: t.Callable[[T], P]) -> RandGen[P]:
+def mapper(gen: RandGen[T], map_fn: t.Callable[[T], P]) -> RandGen[P]:
     def fn(state: RandState) -> P:
         return map_fn(gen(state))
     return fn
@@ -152,7 +188,9 @@ def varname(
     return fn
 
 
-##################################################################
+########################
+# Model Generators
+########################
 
 def field_meta(
     name: RandGen[str] = unique(varname()),
@@ -394,8 +432,8 @@ def assorted_measure(
         field(), 5, 15, unique=True,
     ),
 ):
-    def fn(state: RandState) -> m.Measure:
-        return m.Measure(
+    def fn(state: RandState) -> m.FieldGroup:
+        return m.FieldGroup(
             name=name(state),
             items=items(state),
         )
@@ -403,14 +441,61 @@ def assorted_measure(
 
 
 def likert_measure(
-    name: RandGen[str] = unique(map_rg(varname(), lambda s: s + "Item")),
+    name: RandGen[str] = unique(mapper(varname(), lambda s: s + "Item")),
     items: RandGen[Seq[m.Field[m.FieldType]]] = vbatch(
         field(typ="ENUM_INTEGER"), 10, 20, unique=True,
     ),
 ):
-    def fn(state: RandState) -> m.Measure:
-        return m.Measure(
+    def fn(state: RandState) -> m.FieldGroup:
+        return m.FieldGroup(
             name=name(state),
             items=items(state),
+        )
+    return fn
+
+
+def table_schema(
+    fields: RandGen[Seq[m.Field[m.FieldType] | m.FieldGroup]] = seq(
+        (assorted_measure(), assorted_measure(),
+         likert_measure(), likert_measure()),
+    ),
+    missingValues: RandGen[t.Optional[Seq[str]]] = maybe(
+        vbatch(missing_value(), 0, 3, unique=True)
+    ),
+):
+    def fn(state: RandState) -> m.TableSchema:
+        return m.TableSchema(
+            fields=fields(state),
+            missingValues=missingValues(state),
+        )
+    return fn
+
+
+def table_resource(
+    name: RandGen[str] = varname(join_kebab_case),
+    description: RandGen[t.Optional[str]] = maybe(sentence()),
+    schema: RandGen[m.TableSchema] = table_schema(),
+):
+    def fn(state: RandState) -> m.TableResource:
+        return m.TableResource(
+            name=name(state),
+            description=description(state),
+            schema=schema(state),
+        )
+    return fn
+
+
+def package(
+    name: RandGen[str] = varname(join_kebab_case),
+    description: RandGen[t.Optional[str]] = maybe(sentence()),
+    resources: RandGen[Seq[m.TableResource]] = vbatch(
+        table_resource(), 3, 10, unique=True,
+    ),
+):
+    def fn(state: RandState) -> m.Package:
+        return m.Package(
+            name=name(state),
+            description=description(state),
+            resources=resources(state),
         )
     return fn
