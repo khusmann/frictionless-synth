@@ -69,14 +69,8 @@ class Field(t.Generic[FieldT]):
     type: FieldT
 
 
-class FieldGroup(t.NamedTuple):
-    name: str
-    items: Seq[Field[FieldType]]
-    # TODO: composites
-
-
 class TableSchema(t.NamedTuple):
-    fields: Seq[Field[FieldType] | FieldGroup]
+    fields: Seq[Field[FieldType]]
     missingValues: t.Optional[Seq[str]] = None
 
 

@@ -74,6 +74,12 @@ def seq(gen: Seq[RandGen[T]]) -> RandGen[Seq[T]]:
     return fn
 
 
+def seq_flat(gen: Seq[RandGen[Seq[T]]]) -> RandGen[Seq[T]]:
+    def fn(state: RandState) -> Seq[T]:
+        return tuple([item for sublist in [g(state) for g in gen] for item in sublist])
+    return fn
+
+
 def seq1(gen1: RandGen[T]) -> RandGen[t.Tuple[T]]:
     def fn(state: RandState) -> t.Tuple[T]:
         return (gen1(state),)
@@ -426,36 +432,47 @@ def field(
     return fn
 
 
+def add_field_prefix(
+    field: m.Field[m.FieldType],
+    prefix: str,
+):
+    return m.Field(
+        meta=m.FieldMeta(
+            name=prefix + "_" + field.meta.name,
+            title=field.meta.title,
+            description=field.meta.description,
+        ),
+        type=field.type,
+    )
+
+
 def assorted_measure(
-    name: RandGen[str] = varname(),
+    measure_name: RandGen[str] = unique(varname()),
     items: RandGen[Seq[m.Field[m.FieldType]]] = vbatch(
         field(), 5, 15, unique=True,
     ),
 ):
-    def fn(state: RandState) -> m.FieldGroup:
-        return m.FieldGroup(
-            name=name(state),
-            items=items(state),
-        )
+    def fn(state: RandState):
+        name = measure_name(state)
+        return mapper(items, lambda fields: tuple(add_field_prefix(f, name) for f in fields))(state)
     return fn
 
 
 def likert_measure(
-    name: RandGen[str] = unique(mapper(varname(), lambda s: s + "Item")),
+    measure_name: RandGen[str] = unique(
+        mapper(varname(), lambda s: s + "Item")),
     items: RandGen[Seq[m.Field[m.FieldType]]] = vbatch(
         field(typ="ENUM_INTEGER"), 10, 20, unique=True,
     ),
 ):
-    def fn(state: RandState) -> m.FieldGroup:
-        return m.FieldGroup(
-            name=name(state),
-            items=items(state),
-        )
+    def fn(state: RandState):
+        name = measure_name(state)
+        return mapper(items, lambda fields: tuple(add_field_prefix(f, name) for f in fields))(state)
     return fn
 
 
 def table_schema(
-    fields: RandGen[Seq[m.Field[m.FieldType] | m.FieldGroup]] = seq(
+    fields: RandGen[Seq[m.Field[m.FieldType]]] = seq_flat(
         (assorted_measure(), assorted_measure(),
          likert_measure(), likert_measure()),
     ),
