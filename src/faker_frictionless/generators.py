@@ -1,7 +1,7 @@
 from __future__ import annotations
 import typing as t
 from random import Random
-from .common import faker_wordlist, Seq
+from .common import faker_wordlist, TupleSeq
 from . import models as m
 
 T = t.TypeVar("T")
@@ -61,21 +61,21 @@ def word() -> RandGen[str]:
     return fn
 
 
-def batch(gen: RandGen[T], size: int, unique: bool = False) -> RandGen[Seq[T]]:
-    def fn(state: RandState) -> Seq[T]:
+def batch(gen: RandGen[T], size: int, unique: bool = False) -> RandGen[TupleSeq[T]]:
+    def fn(state: RandState) -> TupleSeq[T]:
         local_gen = local_unique(gen) if unique else gen
         return tuple([local_gen(state) for _ in range(size)])
     return fn
 
 
-def seq(gen: Seq[RandGen[T]]) -> RandGen[Seq[T]]:
-    def fn(state: RandState) -> Seq[T]:
+def seq(gen: TupleSeq[RandGen[T]]) -> RandGen[TupleSeq[T]]:
+    def fn(state: RandState) -> TupleSeq[T]:
         return tuple([g(state) for g in gen])
     return fn
 
 
-def seq_flat(gen: Seq[RandGen[Seq[T]]]) -> RandGen[Seq[T]]:
-    def fn(state: RandState) -> Seq[T]:
+def seq_flat(gen: TupleSeq[RandGen[TupleSeq[T]]]) -> RandGen[TupleSeq[T]]:
+    def fn(state: RandState) -> TupleSeq[T]:
         return tuple([item for sublist in [g(state) for g in gen] for item in sublist])
     return fn
 
@@ -104,8 +104,8 @@ def seq4(gen1: RandGen[T], gen2: RandGen[P], gen3: RandGen[S], gen4: RandGen[U])
     return fn
 
 
-def vbatch(gen: RandGen[T], min_size: int, max_size: int, unique: bool = False) -> RandGen[Seq[T]]:
-    def fn(state: RandState) -> Seq[T]:
+def vbatch(gen: RandGen[T], min_size: int, max_size: int, unique: bool = False) -> RandGen[TupleSeq[T]]:
+    def fn(state: RandState) -> TupleSeq[T]:
         return batch(gen, state.rnd.randint(min_size, max_size), unique)(state)
     return fn
 
@@ -224,7 +224,7 @@ def integer_field_type(
     minimum: RandGen[t.Optional[int]] = maybe(integer()),
     maximum: RandGen[t.Optional[int]] = maybe(integer()),
     missingValues: RandGen[
-        t.Optional[Seq[str]]
+        t.Optional[TupleSeq[str]]
     ] = maybe(vbatch(enum_level_name(), 0, 3, unique=True)),
 ) -> RandGen[m.IntegerFieldType]:
     def fn(state: RandState) -> m.IntegerFieldType:
@@ -287,8 +287,8 @@ def enum_integer_levels(
     label: RandGen[t.Optional[str]] = maybe(enum_level_name()),
     missingValues: t.Sequence[str] = [],
     no_label_prob: float = 0.5,
-) -> RandGen[Seq[m.EnumIntegerLevel]]:
-    def fn(state: RandState) -> Seq[m.EnumIntegerLevel]:
+) -> RandGen[TupleSeq[m.EnumIntegerLevel]]:
+    def fn(state: RandState) -> TupleSeq[m.EnumIntegerLevel]:
         values = (
             *range(*value_range(state)),
             *missingValues
@@ -306,12 +306,12 @@ def enum_integer_levels(
 
 
 def enum_integer_field_type(
-    levels: RandGen[Seq[m.EnumIntegerLevel]] = enum_integer_levels(),
+    levels: RandGen[TupleSeq[m.EnumIntegerLevel]] = enum_integer_levels(),
     required: RandGen[t.Optional[bool]] = maybe(boolean()),
     unique: RandGen[t.Optional[bool]] = maybe(boolean()),
     ordered: RandGen[t.Optional[bool]] = maybe(boolean()),
     missingValues: RandGen[
-        t.Optional[Seq[str]]
+        t.Optional[TupleSeq[str]]
     ] = maybe(vbatch(missing_value(), 0, 3, unique=True)),
 ) -> RandGen[m.EnumIntegerFieldType]:
     def fn(state: RandState) -> m.EnumIntegerFieldType:
@@ -331,7 +331,7 @@ def number_field_type(
     minimum: RandGen[t.Optional[float]] = maybe(number()),
     maximum: RandGen[t.Optional[float]] = maybe(number()),
     missingValues: RandGen[
-        t.Optional[Seq[str]]
+        t.Optional[TupleSeq[str]]
     ] = maybe(vbatch(missing_value(), 0, 3, unique=True)),
 ) -> RandGen[m.NumberFieldType]:
     def fn(state: RandState) -> m.NumberFieldType:
@@ -356,7 +356,7 @@ def string_field_type(
     maxLength: RandGen[t.Optional[int]] = maybe(integer(0, 10)),
     pattern: RandGen[t.Optional[str]] = maybe(pattern_constraint()),
     missingValues: RandGen[
-        t.Optional[Seq[str]]
+        t.Optional[TupleSeq[str]]
     ] = maybe(vbatch(missing_value(), 0, 3, unique=True)),
 ) -> RandGen[m.StringFieldType]:
     def fn(state: RandState) -> m.StringFieldType:
@@ -378,14 +378,14 @@ def string_field_type(
 
 
 def enum_string_field_type(
-    levels: RandGen[Seq[str]] = vbatch(
+    levels: RandGen[TupleSeq[str]] = vbatch(
         enum_level_name(), 2, 5, unique=True
     ),
     required: RandGen[t.Optional[bool]] = maybe(boolean()),
     unique: RandGen[t.Optional[bool]] = maybe(boolean()),
     ordered: RandGen[t.Optional[bool]] = maybe(boolean()),
     missingValues: RandGen[
-        t.Optional[Seq[str]]
+        t.Optional[TupleSeq[str]]
     ] = maybe(vbatch(missing_value(), 0, 3, unique=True)),
 ) -> RandGen[m.EnumStringFieldType]:
     def fn(state: RandState) -> m.EnumStringFieldType:
@@ -448,7 +448,7 @@ def add_field_prefix(
 
 def assorted_measure(
     measure_name: RandGen[str] = unique(varname()),
-    items: RandGen[Seq[m.Field[m.FieldType]]] = vbatch(
+    items: RandGen[TupleSeq[m.Field[m.FieldType]]] = vbatch(
         field(), 5, 15, unique=True,
     ),
 ):
@@ -461,7 +461,7 @@ def assorted_measure(
 def likert_measure(
     measure_name: RandGen[str] = unique(
         mapper(varname(), lambda s: s + "Item")),
-    items: RandGen[Seq[m.Field[m.FieldType]]] = vbatch(
+    items: RandGen[TupleSeq[m.Field[m.FieldType]]] = vbatch(
         field(typ="ENUM_INTEGER"), 10, 20, unique=True,
     ),
 ):
@@ -472,11 +472,11 @@ def likert_measure(
 
 
 def table_schema(
-    fields: RandGen[Seq[m.Field[m.FieldType]]] = seq_flat(
+    fields: RandGen[TupleSeq[m.Field[m.FieldType]]] = seq_flat(
         (assorted_measure(), assorted_measure(),
          likert_measure(), likert_measure()),
     ),
-    missingValues: RandGen[t.Optional[Seq[str]]] = maybe(
+    missingValues: RandGen[t.Optional[TupleSeq[str]]] = maybe(
         vbatch(missing_value(), 0, 3, unique=True)
     ),
 ):
@@ -505,7 +505,7 @@ def table_resource(
 def package(
     name: RandGen[str] = varname(join_kebab_case),
     description: RandGen[t.Optional[str]] = maybe(sentence()),
-    resources: RandGen[Seq[m.TableResource]] = vbatch(
+    resources: RandGen[TupleSeq[m.TableResource]] = vbatch(
         table_resource(), 3, 10, unique=True,
     ),
 ):

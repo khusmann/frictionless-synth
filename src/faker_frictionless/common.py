@@ -47,4 +47,4 @@ def faker_wordlist(locale: str) -> t.Sequence[str]:
 
 _T = t.TypeVar("_T")
 
-Seq = t.Tuple[_T, ...]
+TupleSeq = t.Tuple[_T, ...]

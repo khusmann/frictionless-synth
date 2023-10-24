@@ -1,7 +1,7 @@
 from __future__ import annotations
 import typing as t
 from pydantic import field_validator, RootModel
-from .common import ImmutableBaseModel, faker_wordlist, Seq
+from .common import ImmutableBaseModel, faker_wordlist, TupleSeq
 from .generators import RandGen, RandState
 from abc import ABC, abstractmethod
 
@@ -82,23 +82,23 @@ def local_unique(gen: RandGen[T]) -> RandGen[T]:
     return fn
 
 
-class Batch(GenCfgBase[Seq[T]]):
+class Batch(GenCfgBase[TupleSeq[T]]):
     type: t.Literal["batch"] = "batch"
     child: GenCfgProxy[T]
     size: int | t.Tuple[int, int]
     unique: bool = False
 
     @property
-    def return_type(self) -> t.Type[Seq[T]]:
-        return Seq[self.child.return_type]
+    def return_type(self) -> t.Type[TupleSeq[T]]:
+        return TupleSeq[self.child.return_type]
 
-    def build(self) -> RandGen[Seq[T]]:
+    def build(self) -> RandGen[TupleSeq[T]]:
         child_gen = self.child.build()
 
         if self.unique:
             child_gen = local_unique(child_gen)
 
-        def fn(state: RandState) -> Seq[T]:
+        def fn(state: RandState) -> TupleSeq[T]:
             if isinstance(self.size, int):
                 size = self.size
             else:
