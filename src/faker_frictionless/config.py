@@ -1,50 +1,10 @@
 from __future__ import annotations
 import typing as t
-from pydantic_core import CoreSchema, core_schema
-from pydantic import GetCoreSchemaHandler, BaseModel
-
+from pydantic import field_validator
 from .common import ImmutableBaseModel
 from .generators import RandGen, RandState
 
 T = t.TypeVar("T", covariant=True)
-
-
-ALL_GENCFG: t.List[t.Type[GenCfg[t.Any]]] = []
-
-
-class GenCfg(t.Protocol, t.Generic[T]):
-    def build(self) -> RandGen[T]: ...
-
-    @property
-    def return_type(self) -> t.Type[T]: ...
-
-    @classmethod
-    def model_validate(cls, obj: t.Any) -> GenCfg[T]: ...
-
-    @classmethod
-    def __get_pydantic_core_schema__(
-        cls, __source: t.Type[BaseModel], __handler: GetCoreSchemaHandler
-    ) -> CoreSchema:
-        return_type = t.get_args(__source)[0]
-        return core_schema.no_info_before_validator_function(
-            gencfg_before_validate(return_type), core_schema.any_schema()
-        )
-
-
-def gencfg_before_validate(return_type: t.Any):
-    def fn(v: t.Any) -> t.Any:
-        for i in ALL_GENCFG:
-            try:
-                result = i.model_validate(v)
-                if result.return_type == return_type:
-                    return result
-            except:
-                pass
-            raise ValueError(
-                f"Could not find a generator config for {return_type}"
-            )
-        return v
-    return fn
 
 
 class Word(ImmutableBaseModel):
@@ -69,26 +29,48 @@ class Integer(ImmutableBaseModel):
         return fn
 
 
+def validate_child_gencfg(cls: t.Type[ImmutableBaseModel], v: GenCfg) -> GenCfg:
+    from pydantic._internal._generics import get_args
+    class_generic_type = get_args(cls)[0]
+    gencfg_return_type = v.return_type
+
+    if class_generic_type is t.Any:
+        # If the class generic is Any, then we don't care about the return type
+        return v
+
+    if t.get_origin(gencfg_return_type):
+        # If the gencfg return type is a generic, then we look for an identical match
+        # between the gencfg return type and the class generic type
+        if class_generic_type != gencfg_return_type:
+            raise ValueError(
+                f"Maybe child expected return type {class_generic_type} but got {gencfg_return_type}")
+    else:
+        # If the gencfg return type is a regular type, then we look for a subclass match
+        if isinstance(gencfg_return_type, class_generic_type):
+            return v
+    return v
+
+
 class Maybe(ImmutableBaseModel, t.Generic[T]):
     type: t.Literal["maybe"] = "maybe"
-    gen: GenCfg[T]
     prob: float = 0.5
+    child: GenCfg
+    validate_gencfg = field_validator('child')(validate_child_gencfg)
 
     @property
     def return_type(self) -> t.Type[t.Optional[T]]:
-        return self.gen.return_type
+        arg: t.Any = self.child.return_type
+        return t.Optional[arg]
 
     def build(self) -> RandGen[t.Optional[T]]:
         def fn(state: RandState) -> t.Optional[T]:
             if state.rnd.random() < self.prob:
-                return self.gen.build()(state)
+                result = self.child.build()(state)
+                assert isinstance(result, self.return_type)
+                return result
             else:
                 return None
         return fn
 
 
-ALL_GENCFG.extend([
-    Word,
-    Integer,
-    Maybe[t.Any],
-])
+GenCfg = Maybe[t.Any] | Word | Integer
