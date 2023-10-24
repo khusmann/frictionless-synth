@@ -108,7 +108,30 @@ class Batch(GenCfgBase[Seq[T]]):
         return fn
 
 
-GenCfg = Word | Integer | Batch[t.Any] | Maybe[t.Any]
+class Unique(GenCfgBase[T]):
+    type: t.Literal["unique"] = "unique"
+    child: GenCfgProxy[T]
+
+    @property
+    def return_type(self) -> t.Type[T]:
+        return self.child.return_type
+
+    def build(self) -> RandGen[T]:
+        child_gen = self.child.build()
+
+        def fn(state: RandState) -> T:
+            for _ in range(state.max_unique_attempts):
+                value = child_gen(state)
+                if value not in state.seen:
+                    state.seen.add(value)
+                    return value
+            raise RuntimeError(
+                f"Could not generate global unique value with {state.max_unique_attempts} attempts"
+            )
+        return fn
+
+
+GenCfg = Word | Integer | Batch[t.Any] | Maybe[t.Any] | Unique[t.Any]
 
 
 def parse_gencfg(raw: t.Any) -> GenCfg:

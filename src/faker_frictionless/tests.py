@@ -15,9 +15,8 @@ def cli():
             "child": {
                 "type": "maybe",
                 "child": {
-                    "type": "word",
-                    "min": 0,
-                    "max": 20,
+                    "type": "unique",
+                    "child": {"type": "word"}
                 },
                 "prob": 1,
             },
