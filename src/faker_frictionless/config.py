@@ -1,15 +1,30 @@
 from __future__ import annotations
 import typing as t
 from pydantic import field_validator, RootModel
-from .common import ImmutableBaseModel, faker_wordlist
+from .common import ImmutableBaseModel, faker_wordlist, Seq
 from .generators import RandGen, RandState
+from abc import ABC, abstractmethod
 
 T = t.TypeVar("T", covariant=True)
 
 
-class Word(ImmutableBaseModel):
+class GenCfgBase(ImmutableBaseModel, ABC, t.Generic[T]):
+    @property
+    @abstractmethod
+    def return_type(self) -> t.Type[T]:
+        ...
+
+    @abstractmethod
+    def build(self) -> RandGen[T]:
+        ...
+
+
+class Word(GenCfgBase[str]):
     type: t.Literal["word"] = "word"
-    return_type: t.Final = str
+
+    @property
+    def return_type(self) -> t.Type[str]:
+        return str
 
     def build(self) -> RandGen[str]:
         def fn(state: RandState) -> str:
@@ -17,11 +32,14 @@ class Word(ImmutableBaseModel):
         return fn
 
 
-class Integer(ImmutableBaseModel):
+class Integer(GenCfgBase[int]):
     type: t.Literal["integer"] = "integer"
-    return_type: t.Final = int
     min: int = -1000
     max: int = 1000
+
+    @property
+    def return_type(self) -> t.Type[int]:
+        return int
 
     def build(self) -> RandGen[int]:
         def fn(state: RandState) -> int:
@@ -29,7 +47,7 @@ class Integer(ImmutableBaseModel):
         return fn
 
 
-class Maybe(ImmutableBaseModel, t.Generic[T]):
+class Maybe(GenCfgBase[t.Optional[T]]):
     type: t.Literal["maybe"] = "maybe"
     prob: float = 0.5
     child: GenCfgProxy[T]
@@ -64,23 +82,23 @@ def local_unique(gen: RandGen[T]) -> RandGen[T]:
     return fn
 
 
-class Batch(ImmutableBaseModel, t.Generic[T]):
+class Batch(GenCfgBase[Seq[T]]):
     type: t.Literal["batch"] = "batch"
     child: GenCfgProxy[T]
     size: int | t.Tuple[int, int]
     unique: bool = False
 
     @property
-    def return_type(self) -> t.Type[t.Sequence[T]]:
-        return t.Sequence[self.child.return_type]
+    def return_type(self) -> t.Type[Seq[T]]:
+        return Seq[self.child.return_type]
 
-    def build(self) -> RandGen[t.Sequence[T]]:
+    def build(self) -> RandGen[Seq[T]]:
         child_gen = self.child.build()
 
         if self.unique:
             child_gen = local_unique(child_gen)
 
-        def fn(state: RandState) -> t.Sequence[T]:
+        def fn(state: RandState) -> Seq[T]:
             if isinstance(self.size, int):
                 size = self.size
             else:
