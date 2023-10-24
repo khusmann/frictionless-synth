@@ -47,6 +47,25 @@ class Integer(GenCfgBase[int]):
         return fn
 
 
+class Interval(GenCfgBase[t.Tuple[int, int]]):
+    type: t.Literal["interval"] = "interval"
+    start_min: int
+    start_max: int
+    length_min: int
+    length_max: int
+
+    @property
+    def return_type(self) -> t.Type[t.Tuple[int, int]]:
+        return t.Tuple[int, int]
+
+    def build(self) -> RandGen[t.Tuple[int, int]]:
+        def fn(state: RandState) -> t.Tuple[int, int]:
+            start = state.rnd.randint(self.start_min, self.start_max)
+            length = state.rnd.randint(self.length_min, self.length_max)
+            return (start, start + length)
+        return fn
+
+
 class Maybe(GenCfgBase[t.Optional[T]]):
     type: t.Literal["maybe"] = "maybe"
     prob: float = 0.5
@@ -160,12 +179,26 @@ class Unique(GenCfgBase[T]):
         return fn
 
 
-GenCfg = Word | Integer | Batch[t.Any] | Maybe[t.Any] | Unique[t.Any] | Seq[t.Any]
+GenCfg = Word | Integer | Batch[t.Any] | Maybe[t.Any] | Unique[t.Any] | Seq[t.Any] | Interval
 
 
 def parse_gencfg(raw: t.Any) -> GenCfg:
     from pydantic import TypeAdapter
     return TypeAdapter(GenCfg).validate_python(raw)
+
+
+def is_subset_type(a: t.Type[t.Any], b: t.Type[t.Any]) -> bool:
+    if a is b:
+        return True
+    if t.get_origin(a) is t.Union:
+        return all(is_subset_type(x, b) for x in t.get_args(a))
+    if t.get_origin(b) is t.Union:
+        return any(is_subset_type(a, x) for x in t.get_args(b))
+    if t.get_origin(a):
+        # a is a generic type
+        return a is b
+
+    return issubclass(a, b)
 
 
 class GenCfgProxy(RootModel[GenCfg], t.Generic[T]):
@@ -188,16 +221,13 @@ class GenCfgProxy(RootModel[GenCfg], t.Generic[T]):
             # If the class generic is Any, then we don't care about the return type
             return v
 
-        if t.get_origin(gencfg_return_type):
-            # If the gencfg return type is a generic, then we look for an identical match
-            # between the gencfg return type and the class generic type
-            if class_generic_type != gencfg_return_type:
-                raise ValueError(
-                    f"Maybe child expected return type {class_generic_type} but got {gencfg_return_type}")
-        else:
-            # If the gencfg return type is a regular type, then we look for a subclass match
-            if isinstance(gencfg_return_type, class_generic_type):
-                return v
+        print(gencfg_return_type)
+        print(class_generic_type)
+
+        if not is_subset_type(gencfg_return_type, class_generic_type):
+            raise ValueError(
+                f"Expected child return type {class_generic_type} but got {gencfg_return_type}")
+
         return v
 
     @property
@@ -209,7 +239,6 @@ class GenCfgProxy(RootModel[GenCfg], t.Generic[T]):
         child_gen = self.root.build()
 
         def fn(state: RandState) -> T:
-            result = child_gen(state)
-            assert isinstance(result, self.return_type)
+            result: t.Any = child_gen(state)
             return result
         return fn

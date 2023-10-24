@@ -9,7 +9,7 @@ def cli():
     # print(gen.batch(gen.enum_string_field_type(), 200)(rnd_state))
     print(gen.package()(rnd_state))
     print(cfg.Word())
-    g = (cfg.Seq[t.Optional[str] | str].model_validate(
+    g = (cfg.Seq[t.Optional[str] | str | t.Tuple[int, int]].model_validate(
         {
             "type": "seq",
             "children": [{
@@ -20,7 +20,11 @@ def cli():
                 },
                 "prob": 0.5,
             },
-                {"type": "word"}
+                {"type": "word"},
+                {
+                    "type": "interval",
+                    "start_min": -10, "start_max": 10, "length_min": 1, "length_max": 10,
+            },
             ],
             "size": 20,
             "unique": True,
