@@ -9,20 +9,26 @@ def cli():
     # print(gen.batch(gen.enum_string_field_type(), 200)(rnd_state))
     print(gen.package()(rnd_state))
     print(cfg.Word())
-    g = (cfg.Maybe[t.Optional[int]].model_validate(
+    g = (cfg.Batch[t.Optional[str]].model_validate(
         {
-            "type": "maybe",
+            "type": "batch",
             "child": {
                 "type": "maybe",
                 "child": {
-                    "type": "integer",
+                    "type": "word",
+                    "min": 0,
+                    "max": 20,
                 },
+                "prob": 1,
             },
+            "size": 20,
+            "unique": True,
         }
     ))
     print(g)
     print(g.model_dump_json())
-    print(g.build()(rnd_state))
+    result = g.build()(rnd_state)
+    print(result)
 #    print(cfg.Boop.model_validate(
 #        {
 #            "z": {

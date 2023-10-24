@@ -1,7 +1,7 @@
 from __future__ import annotations
 import typing as t
 from pydantic import field_validator, RootModel
-from .common import ImmutableBaseModel
+from .common import ImmutableBaseModel, faker_wordlist
 from .generators import RandGen, RandState
 
 T = t.TypeVar("T", covariant=True)
@@ -13,19 +13,19 @@ class Word(ImmutableBaseModel):
 
     def build(self) -> RandGen[str]:
         def fn(state: RandState) -> str:
-            return "hello"
+            return state.rnd.choice(faker_wordlist(state.locale))
         return fn
 
 
 class Integer(ImmutableBaseModel):
     type: t.Literal["integer"] = "integer"
     return_type: t.Final = int
-    minimum: int = -1000
-    maximum: int = 1000
+    min: int = -1000
+    max: int = 1000
 
     def build(self) -> RandGen[int]:
         def fn(state: RandState) -> int:
-            return state.rnd.randint(self.minimum, self.maximum)
+            return state.rnd.randint(self.min, self.max)
         return fn
 
 
@@ -39,15 +39,63 @@ class Maybe(ImmutableBaseModel, t.Generic[T]):
         return t.Optional[self.child.return_type]
 
     def build(self) -> RandGen[t.Optional[T]]:
+        child_gen = self.child.build()
+
         def fn(state: RandState) -> t.Optional[T]:
             if state.rnd.random() < self.prob:
-                return self.child.build()(state)
+                return child_gen(state)
             else:
                 return None
         return fn
 
 
-GenCfg = Maybe[t.Any] | Word | Integer
+def local_unique(gen: RandGen[T]) -> RandGen[T]:
+    seen: t.Set[T] = set()
+
+    def fn(state: RandState) -> T:
+        for _ in range(state.max_unique_attempts):
+            value = gen(state)
+            if value not in seen:
+                seen.add(value)
+                return value
+        raise RuntimeError(
+            f"Could not generate local unique value with {state.max_unique_attempts} attempts"
+        )
+    return fn
+
+
+class Batch(ImmutableBaseModel, t.Generic[T]):
+    type: t.Literal["batch"] = "batch"
+    child: GenCfgProxy[T]
+    size: int | t.Tuple[int, int]
+    unique: bool = False
+
+    @property
+    def return_type(self) -> t.Type[t.Sequence[T]]:
+        return t.Sequence[self.child.return_type]
+
+    def build(self) -> RandGen[t.Sequence[T]]:
+        child_gen = self.child.build()
+
+        if self.unique:
+            child_gen = local_unique(child_gen)
+
+        def fn(state: RandState) -> t.Sequence[T]:
+            if isinstance(self.size, int):
+                size = self.size
+            else:
+                size = state.rnd.randint(*self.size)
+
+            return tuple(child_gen(state) for _ in range(size))
+        return fn
+
+
+GenCfg = Word | Integer | Batch[t.Any] | Maybe[t.Any]
+
+
+def parse_gencfg(raw: t.Any) -> GenCfg:
+    from pydantic import TypeAdapter
+    return TypeAdapter(GenCfg).validate_python(raw)
 
 
 class GenCfgProxy(RootModel[GenCfg], t.Generic[T]):
@@ -87,8 +135,10 @@ class GenCfgProxy(RootModel[GenCfg], t.Generic[T]):
         return arg
 
     def build(self) -> RandGen[T]:
+        child_gen = self.root.build()
+
         def fn(state: RandState) -> T:
-            result = self.root.build()(state)
+            result = child_gen(state)
             assert isinstance(result, self.return_type)
             return result
         return fn
