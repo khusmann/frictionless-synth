@@ -143,6 +143,7 @@ class GenCfgProxy(RootModel[GenCfg], t.Generic[T]):
     @field_validator('root')
     @classmethod
     def validate_gencfg(cls, v: GenCfg) -> GenCfg:
+        # https://github.com/pydantic/pydantic/issues/7837
         from pydantic._internal._generics import get_args
 
         class_args = get_args(cls)
