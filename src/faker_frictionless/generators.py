@@ -6,8 +6,6 @@ from . import models as m
 
 T = t.TypeVar("T")
 P = t.TypeVar("P")
-S = t.TypeVar("S")
-U = t.TypeVar("U")
 
 MissingValueStyle = t.Literal["SPSS", "SATA", "UNDERSCORE"]
 
@@ -370,64 +368,42 @@ def field_group(
         )
     return fn
 
-#
-#
-# def likert_measure(
-#    measure_name: RandGen[str] = unique(
-#        mapper(varname(), lambda s: s + "Item")),
-#    items: RandGen[TupleSeq[m.Field[m.FieldType]]] = vbatch(
-#        field(typ="ENUM_INTEGER"), 10, 20, unique=True,
-#    ),
-# ):
-#    def fn(state: RandState):
-#        name = measure_name(state)
-#        return mapper(items, lambda fields: tuple(add_field_prefix(f, name) for f in fields))(state)
-#    return fn
-#
-#
-# def table_schema(
-#    fields: RandGen[TupleSeq[m.Field[m.FieldType]]] = seq_flat(
-#        (assorted_measure(), assorted_measure(),
-#         likert_measure(), likert_measure()),
-#    ),
-#    missingValues: RandGen[t.Optional[TupleSeq[str]]] = maybe(
-#        vbatch(missing_value(), 0, 3, unique=True)
-#    ),
-# ):
-#    def fn(state: RandState) -> m.TableSchema:
-#        return m.TableSchema(
-#            fields=fields(state),
-#            missingValues=missingValues(state),
-#        )
-#    return fn
 
-#
-# def table_resource(
-#    name: RandGen[str] = varname(join_kebab_case),
-#    description: RandGen[t.Optional[str]] = maybe(sentence()),
-#    schema: RandGen[m.TableSchema] = table_schema(),
-# ):
-#    def fn(state: RandState) -> m.TableResource:
-#        return m.TableResource(
-#            name=name(state),
-#            description=description(state),
-#            schema=schema(state),
-#        )
-#    return fn
-#
-#
-# def package(
-#    name: RandGen[str] = varname(join_kebab_case),
-#    description: RandGen[t.Optional[str]] = maybe(sentence()),
-#    resources: RandGen[TupleSeq[m.TableResource]] = vbatch(
-#        table_resource(), 3, 10, unique=True,
-#    ),
-# ):
-#    def fn(state: RandState) -> m.Package:
-#        return m.Package(
-#            name=name(state),
-#            description=description(state),
-#            resources=resources(state),
-#        )
-#    return fn
-###
+def table_schema(
+    fields: RandGen[TupleSeq[m.Field[m.FieldType]]],
+    missingValues: RandGen[t.Optional[TupleSeq[str]]],
+):
+    def fn(state: RandState) -> m.TableSchema:
+        return m.TableSchema(
+            fields=fields(state),
+            missingValues=missingValues(state),
+        )
+    return fn
+
+
+def table_resource(
+    name: RandGen[str],
+    description: RandGen[t.Optional[str]],
+    schema: RandGen[m.TableSchema],
+):
+    def fn(state: RandState) -> m.TableResource:
+        return m.TableResource(
+            name=name(state),
+            description=description(state),
+            schema=schema(state),
+        )
+    return fn
+
+
+def package(
+    name: RandGen[str],
+    description: RandGen[t.Optional[str]],
+    resources: RandGen[TupleSeq[m.TableResource]],
+):
+    def fn(state: RandState) -> m.Package:
+        return m.Package(
+            name=name(state),
+            description=description(state),
+            resources=resources(state),
+        )
+    return fn

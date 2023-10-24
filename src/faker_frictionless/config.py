@@ -119,22 +119,6 @@ class Integer(GenCfgBase[int]):
         return gen.integer(self.min, self.max)
 
 
-class Interval(GenCfgBase[t.Tuple[int, int]]):
-    type: t.Literal["interval"] = "interval"
-    start_min: int
-    start_max: int
-    length_min: int
-    length_max: int
-
-    @property
-    def return_type(self) -> t.Type[t.Tuple[int, int]]:
-        return t.Tuple[int, int]
-
-    def build(self) -> gen.RandGen[t.Tuple[int, int]]:
-        start = gen.integer(self.start_min, self.start_max)
-        length = gen.integer(self.length_min, self.length_max)
-        return gen.interval(start, length)
-
 # Generator combinators
 
 
@@ -238,9 +222,12 @@ def build_helper(gen: GenCfgProxy[T] | T) -> gen.RandGen[T]:
 
 
 def default_gencfg_field(*lazy_options: t.Callable[[], GenCfgBase[T]]) -> GenCfgProxy[T]:
-    return PydanticField(default_factory=lambda: GenCfgProxy[T](root=Choice[t.Any](children=tuple((
-        GenCfgProxy[T](root=t.cast(GenCfg, option())) for option in lazy_options
-    )))))
+    if len(lazy_options) == 1:
+        return PydanticField(default_factory=lambda: GenCfgProxy[T](root=t.cast(GenCfg, lazy_options[0]())))
+    else:
+        return PydanticField(default_factory=lambda: GenCfgProxy[T](root=Choice[t.Any](children=tuple((
+            GenCfgProxy[T](root=t.cast(GenCfg, option())) for option in lazy_options
+        )))))
 
 
 class IntegerFieldType(GenCfgBase[m.IntegerFieldType]):
@@ -616,11 +603,103 @@ class LikertFieldGroup(GenCfgBase[TupleSeq[m.Field[m.FieldType]]]):
         )
 
 
+class TableSchema(GenCfgBase[m.TableSchema]):
+    type: t.Literal["table_schema"] = "table_schema"
+    fields: GenCfgProxy[TupleSeq[m.Field[m.FieldType]]] | TupleSeq[GenCfgProxy[TupleSeq[m.Field[m.FieldType]]]] = default_gencfg_field(
+        FieldGroup,
+    )
+    missing_value_name: GenCfgProxy[str] = default_gencfg_field(
+        MissingValueName
+    )
+    missing_value_length_max: int = 5
+    undefined_prob: float = 0.5
+
+    @property
+    def return_type(self) -> t.Type[m.TableSchema]:
+        return m.TableSchema
+
+    def build(self) -> gen.RandGen[m.TableSchema]:
+        if isinstance(self.fields, GenCfgProxy):
+            fields_gen = build_helper(self.fields)
+        else:
+            fields_gen = gen.seq_flat(
+                tuple(build_helper(field) for field in self.fields)
+            )
+
+        missing_value_name_gen = build_helper(self.missing_value_name)
+
+        missing_value_gen = gen.maybe(
+            gen.batch(
+                missing_value_name_gen,
+                (0, self.missing_value_length_max),
+                unique=True,
+            ),
+            1 - self.undefined_prob
+        )
+
+        return gen.table_schema(
+            fields_gen,
+            missing_value_gen
+        )
+
+
+class TableResource(GenCfgBase[m.TableResource]):
+    type: t.Literal["table_resource"] = "table_resource"
+    name: GenCfgProxy[str] = default_gencfg_field(KebabCaseName)
+    description: GenCfgProxy[str] = default_gencfg_field(Sentence)
+    table_schema: GenCfgProxy[m.TableSchema] = default_gencfg_field(
+        TableSchema
+    )
+
+    @property
+    def return_type(self) -> t.Type[m.TableResource]:
+        return m.TableResource
+
+    def build(self) -> gen.RandGen[m.TableResource]:
+        name_gen = build_helper(self.name)
+        description_gen = build_helper(self.description)
+        table_schema_gen = build_helper(self.table_schema)
+
+        return gen.table_resource(
+            name_gen,
+            description_gen,
+            table_schema_gen,
+        )
+
+
+class Package(GenCfgBase[m.Package]):
+    type: t.Literal["package"] = "package"
+    name: GenCfgProxy[str] = default_gencfg_field(KebabCaseName)
+    description: GenCfgProxy[str] = default_gencfg_field(Sentence)
+    resource: GenCfgProxy[m.TableResource] = default_gencfg_field(
+        TableResource,
+    )
+    n_resources: int | t.Tuple[int, int] = (1, 5)
+
+    @property
+    def return_type(self) -> t.Type[m.Package]:
+        return m.Package
+
+    def build(self) -> gen.RandGen[m.Package]:
+        name_gen = build_helper(self.name)
+        description_gen = build_helper(self.description)
+        resources_gen = gen.batch(
+            build_helper(self.resource),
+            self.n_resources,
+            unique=False,
+        )
+
+        return gen.package(
+            name_gen,
+            description_gen,
+            resources_gen,
+        )
+
+
 # All generators
 GenCfg = (
     Word |
     Integer |
-    Interval |
     Sentence |
     SnakeCaseName |
     CamelCaseName |
@@ -639,7 +718,10 @@ GenCfg = (
     Choice[t.Any] |
     FieldGroup |
     LikertFieldGroup |
-    MetaGroup
+    MetaGroup |
+    TableSchema |
+    TableResource |
+    Package
 )
 
 

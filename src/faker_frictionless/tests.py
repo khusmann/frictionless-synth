@@ -20,18 +20,14 @@ def cli():
                 },
                 "prob": 0.5,
             },
-                {"type": "field_group"},
-                {
-                    "type": "interval",
-                    "start_min": -10, "start_max": 10, "length_min": 1, "length_max": 10,
-            },
+                {"type": "package"},
             ],
             "size": 20,
             "unique": True,
         }
     ))
     print(g)
-    print(g.model_dump_json())
+    print(g.model_dump_json(indent=3))
     result = g.build()(rnd_state)
     print(result)
 #    print(cfg.Boop.model_validate(
