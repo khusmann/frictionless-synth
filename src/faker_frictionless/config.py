@@ -82,6 +82,35 @@ def local_unique(gen: RandGen[T]) -> RandGen[T]:
     return fn
 
 
+class Seq(GenCfgBase[TupleSeq[T]]):
+    type: t.Literal["seq"] = "seq"
+    children: TupleSeq[GenCfgProxy[T]]
+    unique: bool = False
+
+    @property
+    def return_type(self) -> t.Type[TupleSeq[T]]:
+        if not self.children:
+            raise ValueError("Seq must have at least one child")
+
+        result = self.children[0].return_type
+        for child in self.children[1:]:
+            result = t.Union[result, child.return_type]
+
+        return TupleSeq[result]
+
+    def build(self) -> RandGen[TupleSeq[T]]:
+        child_gens = tuple(child.build() for child in self.children)
+
+        if self.unique:
+            child_gens = tuple(
+                local_unique(child_gen) for child_gen in child_gens
+            )
+
+        def fn(state: RandState) -> TupleSeq[T]:
+            return tuple(child_gen(state) for child_gen in child_gens)
+        return fn
+
+
 class Batch(GenCfgBase[TupleSeq[T]]):
     type: t.Literal["batch"] = "batch"
     child: GenCfgProxy[T]
@@ -131,7 +160,7 @@ class Unique(GenCfgBase[T]):
         return fn
 
 
-GenCfg = Word | Integer | Batch[t.Any] | Maybe[t.Any] | Unique[t.Any]
+GenCfg = Word | Integer | Batch[t.Any] | Maybe[t.Any] | Unique[t.Any] | Seq[t.Any]
 
 
 def parse_gencfg(raw: t.Any) -> GenCfg:

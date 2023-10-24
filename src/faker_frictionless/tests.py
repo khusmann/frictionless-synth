@@ -9,17 +9,19 @@ def cli():
     # print(gen.batch(gen.enum_string_field_type(), 200)(rnd_state))
     print(gen.package()(rnd_state))
     print(cfg.Word())
-    g = (cfg.Batch[t.Optional[str]].model_validate(
+    g = (cfg.Seq[t.Optional[str] | str].model_validate(
         {
-            "type": "batch",
-            "child": {
+            "type": "seq",
+            "children": [{
                 "type": "maybe",
                 "child": {
                     "type": "unique",
                     "child": {"type": "word"}
                 },
-                "prob": 1,
+                "prob": 0.5,
             },
+                {"type": "word"}
+            ],
             "size": 20,
             "unique": True,
         }
