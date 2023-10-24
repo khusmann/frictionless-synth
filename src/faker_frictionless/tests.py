@@ -12,12 +12,15 @@ def cli():
     g = (cfg.Maybe[t.Optional[int]].model_validate(
         {
             "type": "maybe",
-            "type": "maybe",
             "child": {
+                "type": "maybe",
+                "child": {
                     "type": "integer",
+                },
             },
         }
     ))
+    print(g)
     print(g.model_dump_json())
     print(g.build()(rnd_state))
 #    print(cfg.Boop.model_validate(
