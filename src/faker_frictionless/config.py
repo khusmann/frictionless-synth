@@ -1,8 +1,9 @@
 from __future__ import annotations
 import typing as t
-from pydantic import field_validator, RootModel
-from .common import ImmutableBaseModel, faker_wordlist, TupleSeq
-from .generators import RandGen, RandState
+from pydantic import field_validator, RootModel, Field as PydanticField
+from .common import ImmutableBaseModel, TupleSeq
+from . import generators as gen
+from . import models as m
 from abc import ABC, abstractmethod
 
 T = t.TypeVar("T", covariant=True)
@@ -15,8 +16,10 @@ class GenCfgBase(ImmutableBaseModel, ABC, t.Generic[T]):
         ...
 
     @abstractmethod
-    def build(self) -> RandGen[T]:
+    def build(self) -> gen.RandGen[T]:
         ...
+
+# Word generators
 
 
 class Word(GenCfgBase[str]):
@@ -26,10 +29,81 @@ class Word(GenCfgBase[str]):
     def return_type(self) -> t.Type[str]:
         return str
 
-    def build(self) -> RandGen[str]:
-        def fn(state: RandState) -> str:
-            return state.rnd.choice(faker_wordlist(state.locale))
-        return fn
+    def build(self) -> gen.RandGen[str]:
+        return gen.word()
+
+
+class Sentence(GenCfgBase[str]):
+    type: t.Literal["sentence"] = "sentence"
+    n_words: int | t.Tuple[int, int] = 10
+
+    @property
+    def return_type(self) -> t.Type[str]:
+        return str
+
+    def build(self) -> gen.RandGen[str]:
+        return gen.joined_words(gen.join_sentence, self.n_words)
+
+
+class SnakeCaseName(GenCfgBase[str]):
+    type: t.Literal["snake_case_name"] = "snake_case_name"
+    n_words: int | t.Tuple[int, int] = (1, 3)
+
+    @property
+    def return_type(self) -> t.Type[str]:
+        return str
+
+    def build(self) -> gen.RandGen[str]:
+        return gen.joined_words(gen.join_snake_case, self.n_words)
+
+
+class CamelCaseName(GenCfgBase[str]):
+    type: t.Literal["camel_case_name"] = "camel_case_name"
+    n_words: int | t.Tuple[int, int] = (1, 3)
+
+    @property
+    def return_type(self) -> t.Type[str]:
+        return str
+
+    def build(self) -> gen.RandGen[str]:
+        return gen.joined_words(gen.join_camel_case, self.n_words)
+
+
+class KebabCaseName(GenCfgBase[str]):
+    type: t.Literal["kebab_case_name"] = "kebab_case_name"
+    n_words: int | t.Tuple[int, int] = (1, 3)
+
+    @property
+    def return_type(self) -> t.Type[str]:
+        return str
+
+    def build(self) -> gen.RandGen[str]:
+        return gen.joined_words(gen.join_kebab_case, self.n_words)
+
+
+class SnakeCaseCapsName(GenCfgBase[str]):
+    type: t.Literal["snake_case_caps_name"] = "snake_case_caps_name"
+    n_words: int | t.Tuple[int, int] = (1, 3)
+
+    @property
+    def return_type(self) -> t.Type[str]:
+        return str
+
+    def build(self) -> gen.RandGen[str]:
+        return gen.joined_words(gen.join_snake_case_caps, self.n_words)
+
+
+class MissingValueName(GenCfgBase[str]):
+    type: t.Literal["missing_value_name"] = "missing_value_name"
+
+    @property
+    def return_type(self) -> t.Type[str]:
+        return str
+
+    def build(self) -> gen.RandGen[str]:
+        return gen.missing_value()
+
+# Numeric generators
 
 
 class Integer(GenCfgBase[int]):
@@ -41,10 +115,8 @@ class Integer(GenCfgBase[int]):
     def return_type(self) -> t.Type[int]:
         return int
 
-    def build(self) -> RandGen[int]:
-        def fn(state: RandState) -> int:
-            return state.rnd.randint(self.min, self.max)
-        return fn
+    def build(self) -> gen.RandGen[int]:
+        return gen.integer(self.min, self.max)
 
 
 class Interval(GenCfgBase[t.Tuple[int, int]]):
@@ -58,12 +130,12 @@ class Interval(GenCfgBase[t.Tuple[int, int]]):
     def return_type(self) -> t.Type[t.Tuple[int, int]]:
         return t.Tuple[int, int]
 
-    def build(self) -> RandGen[t.Tuple[int, int]]:
-        def fn(state: RandState) -> t.Tuple[int, int]:
-            start = state.rnd.randint(self.start_min, self.start_max)
-            length = state.rnd.randint(self.length_min, self.length_max)
-            return (start, start + length)
-        return fn
+    def build(self) -> gen.RandGen[t.Tuple[int, int]]:
+        start = gen.integer(self.start_min, self.start_max)
+        length = gen.integer(self.length_min, self.length_max)
+        return gen.interval(start, length)
+
+# Generator combinators
 
 
 class Maybe(GenCfgBase[t.Optional[T]]):
@@ -75,30 +147,28 @@ class Maybe(GenCfgBase[t.Optional[T]]):
     def return_type(self) -> t.Type[t.Optional[T]]:
         return t.Optional[self.child.return_type]
 
-    def build(self) -> RandGen[t.Optional[T]]:
-        child_gen = self.child.build()
-
-        def fn(state: RandState) -> t.Optional[T]:
-            if state.rnd.random() < self.prob:
-                return child_gen(state)
-            else:
-                return None
-        return fn
+    def build(self) -> gen.RandGen[t.Optional[T]]:
+        return gen.maybe(self.child.build(), self.prob)
 
 
-def local_unique(gen: RandGen[T]) -> RandGen[T]:
-    seen: t.Set[T] = set()
+class Choice(GenCfgBase[T]):
+    type: t.Literal["choice"] = "choice"
+    children: TupleSeq[GenCfgProxy[T]]
 
-    def fn(state: RandState) -> T:
-        for _ in range(state.max_unique_attempts):
-            value = gen(state)
-            if value not in seen:
-                seen.add(value)
-                return value
-        raise RuntimeError(
-            f"Could not generate local unique value with {state.max_unique_attempts} attempts"
-        )
-    return fn
+    @property
+    def return_type(self) -> t.Type[T]:
+        if not self.children:
+            raise ValueError("Choice must have at least one child")
+
+        result = self.children[0].return_type
+        for child in self.children[1:]:
+            result = t.Union[result, child.return_type]
+
+        return result
+
+    def build(self) -> gen.RandGen[T]:
+        child_gens = tuple(child.build() for child in self.children)
+        return gen.choice(child_gens)
 
 
 class Seq(GenCfgBase[TupleSeq[T]]):
@@ -117,17 +187,15 @@ class Seq(GenCfgBase[TupleSeq[T]]):
 
         return TupleSeq[result]
 
-    def build(self) -> RandGen[TupleSeq[T]]:
+    def build(self) -> gen.RandGen[TupleSeq[T]]:
         child_gens = tuple(child.build() for child in self.children)
 
         if self.unique:
             child_gens = tuple(
-                local_unique(child_gen) for child_gen in child_gens
+                gen.local_unique(child_gen) for child_gen in child_gens
             )
 
-        def fn(state: RandState) -> TupleSeq[T]:
-            return tuple(child_gen(state) for child_gen in child_gens)
-        return fn
+        return gen.seq(child_gens)
 
 
 class Batch(GenCfgBase[TupleSeq[T]]):
@@ -140,20 +208,9 @@ class Batch(GenCfgBase[TupleSeq[T]]):
     def return_type(self) -> t.Type[TupleSeq[T]]:
         return TupleSeq[self.child.return_type]
 
-    def build(self) -> RandGen[TupleSeq[T]]:
+    def build(self) -> gen.RandGen[TupleSeq[T]]:
         child_gen = self.child.build()
-
-        if self.unique:
-            child_gen = local_unique(child_gen)
-
-        def fn(state: RandState) -> TupleSeq[T]:
-            if isinstance(self.size, int):
-                size = self.size
-            else:
-                size = state.rnd.randint(*self.size)
-
-            return tuple(child_gen(state) for _ in range(size))
-        return fn
+        return gen.batch(child_gen, self.size, self.unique)
 
 
 class Unique(GenCfgBase[T]):
@@ -164,22 +221,426 @@ class Unique(GenCfgBase[T]):
     def return_type(self) -> t.Type[T]:
         return self.child.return_type
 
-    def build(self) -> RandGen[T]:
+    def build(self) -> gen.RandGen[T]:
         child_gen = self.child.build()
+        return gen.unique(child_gen)
 
-        def fn(state: RandState) -> T:
-            for _ in range(state.max_unique_attempts):
-                value = child_gen(state)
-                if value not in state.seen:
-                    state.seen.add(value)
-                    return value
-            raise RuntimeError(
-                f"Could not generate global unique value with {state.max_unique_attempts} attempts"
+
+def build_helper(gen: GenCfgProxy[T] | T) -> gen.RandGen[T]:
+    if isinstance(gen, GenCfgProxy):
+        return gen.build()
+    else:
+        def fn(state: gen.RandState) -> T:
+            return gen
+        return fn
+
+# Frictionless Generators
+
+
+def default_gencfg_field(*lazy_options: t.Callable[[], GenCfgBase[T]]) -> GenCfgProxy[T]:
+    return PydanticField(default_factory=lambda: GenCfgProxy[T](root=Choice[t.Any](children=tuple((
+        GenCfgProxy[T](root=t.cast(GenCfg, option())) for option in lazy_options
+    )))))
+
+
+class IntegerFieldType(GenCfgBase[m.IntegerFieldType]):
+    type: t.Literal["integer_field_type"] = "integer_field_type"
+    required_prob: float = 0.5
+    unique_prob: float = 0.5
+    undefined_prob: float = 0.5
+    minimum_range: t.Tuple[int, int] = (-1000, 1000)
+    maximum_range: t.Tuple[int, int] = (-1000, 1000)
+    missing_value_name: GenCfgProxy[str] = default_gencfg_field(
+        MissingValueName
+    )
+    missing_value_length_max: int = 5
+
+    @property
+    def return_type(self) -> t.Type[m.IntegerFieldType]:
+        return m.IntegerFieldType
+
+    def build(self) -> gen.RandGen[m.IntegerFieldType]:
+        required_gen = gen.maybe(
+            gen.boolean(self.required_prob),
+            1 - self.undefined_prob,
+        )
+        unique_gen = gen.maybe(
+            gen.boolean(self.unique_prob),
+            1 - self.undefined_prob,
+        )
+        minimum_gen = gen.maybe(
+            gen.integer(*self.minimum_range),
+            1 - self.undefined_prob,
+        )
+        maximum_gen = gen.maybe(
+            gen.integer(*self.maximum_range),
+            1 - self.undefined_prob,
+        )
+        missing_value_name_gen = build_helper(self.missing_value_name)
+        missing_value_gen = gen.maybe(
+            gen.batch(
+                missing_value_name_gen,
+                (0, self.missing_value_length_max),
+                unique=True,
+            ),
+            1 - self.undefined_prob
+        )
+        return gen.integer_field_type(
+            required=required_gen,
+            unique=unique_gen,
+            minimum=minimum_gen,
+            maximum=maximum_gen,
+            missingValues=missing_value_gen,
+        )
+
+
+class EnumIntegerFieldType(GenCfgBase[m.EnumIntegerFieldType]):
+    type: t.Literal["enum_integer_field_type"] = "enum_integer_field_type"
+    level_start_range: t.Tuple[int, int] = (2, 10)
+    n_levels_range: t.Tuple[int, int] = (2, 10)
+    label_name: GenCfgProxy[str] = default_gencfg_field(SnakeCaseCapsName)
+    no_label_prob: float = 0.2
+    required_prob: float = 0.5
+    unique_prob: float = 0.5
+    ordered_prob: float = 0.5
+    undefined_prob: float = 0.5
+    missing_value_name: GenCfgProxy[str] = default_gencfg_field(
+        MissingValueName
+    )
+    missing_value_length_max: int = 5
+
+    @property
+    def return_type(self) -> t.Type[m.EnumIntegerFieldType]:
+        return m.EnumIntegerFieldType
+
+    def build(self) -> gen.RandGen[m.EnumIntegerFieldType]:
+        value_range_gen = gen.interval(
+            start=gen.integer(*self.level_start_range),
+            size=gen.integer(*self.n_levels_range),
+        )
+
+        required_gen = gen.maybe(
+            gen.boolean(self.required_prob),
+            1 - self.undefined_prob,
+        )
+
+        unique_gen = gen.maybe(
+            gen.boolean(self.unique_prob),
+            1 - self.undefined_prob,
+        )
+
+        ordered_gen = gen.maybe(
+            gen.boolean(self.ordered_prob),
+            1 - self.undefined_prob,
+        )
+
+        label_name_gen = build_helper(self.label_name)
+        missing_value_name_gen = build_helper(self.missing_value_name)
+
+        missing_value_gen = gen.maybe(
+            gen.batch(
+                missing_value_name_gen,
+                (0, self.missing_value_length_max),
+                unique=True,
+            ),
+            1 - self.undefined_prob
+        )
+
+        return gen.enum_integer_field_type(
+            value_range=value_range_gen,
+            label_name=label_name_gen,
+            no_label_prob=self.no_label_prob,
+            required=required_gen,
+            unique=unique_gen,
+            ordered=ordered_gen,
+            missingValues=missing_value_gen,
+        )
+
+
+class NumberFieldType(GenCfgBase[m.NumberFieldType]):
+    type: t.Literal["number_field_type"] = "number_field_type"
+    required_prob: float = 0.5
+    unique_prob: float = 0.5
+    undefined_prob: float = 0.5
+    minimum_range: t.Tuple[int, int] = (-1000, 1000)
+    maximum_range: t.Tuple[int, int] = (-1000, 1000)
+    missing_value_name: GenCfgProxy[str] = default_gencfg_field(
+        MissingValueName
+    )
+    missing_value_length_max: int = 5
+
+    @property
+    def return_type(self) -> t.Type[m.NumberFieldType]:
+        return m.NumberFieldType
+
+    def build(self) -> gen.RandGen[m.NumberFieldType]:
+        required_gen = gen.maybe(
+            gen.boolean(self.required_prob),
+            1 - self.undefined_prob,
+        )
+        unique_gen = gen.maybe(
+            gen.boolean(self.unique_prob),
+            1 - self.undefined_prob,
+        )
+        minimum_gen = gen.maybe(
+            gen.integer(*self.minimum_range),
+            1 - self.undefined_prob,
+        )
+        maximum_gen = gen.maybe(
+            gen.integer(*self.maximum_range),
+            1 - self.undefined_prob,
+        )
+        missing_value_name_gen = build_helper(self.missing_value_name)
+        missing_value_gen = gen.maybe(
+            gen.batch(
+                missing_value_name_gen,
+                (0, self.missing_value_length_max),
+                unique=True,
+            ),
+            1 - self.undefined_prob
+        )
+        return gen.number_field_type(
+            required=required_gen,
+            unique=unique_gen,
+            minimum=minimum_gen,
+            maximum=maximum_gen,
+            missingValues=missing_value_gen,
+        )
+
+
+class StringFieldType(GenCfgBase[m.StringFieldType]):
+    type: t.Literal["string_field_type"] = "string_field_type"
+    required_prob: float = 0.5
+    unique_prob: float = 0.5
+    undefined_prob: float = 0.5
+    minLength_range: t.Tuple[int, int] = (0, 20)
+    maxLength_range: t.Tuple[int, int] = (10, 30)
+    missing_value_name: GenCfgProxy[str] = default_gencfg_field(
+        MissingValueName
+    )
+    missing_value_length_max: int = 5
+
+    @property
+    def return_type(self) -> t.Type[m.StringFieldType]:
+        return m.StringFieldType
+
+    def build(self) -> gen.RandGen[m.StringFieldType]:
+        required_gen = gen.maybe(
+            gen.boolean(self.required_prob),
+            1 - self.undefined_prob,
+        )
+        unique_gen = gen.maybe(
+            gen.boolean(self.unique_prob),
+            1 - self.undefined_prob,
+        )
+        minLength_gen = gen.maybe(
+            gen.integer(*self.minLength_range),
+            1 - self.undefined_prob,
+        )
+        maxLength_gen = gen.maybe(
+            gen.integer(*self.maxLength_range),
+            1 - self.undefined_prob,
+        )
+        missing_value_name_gen = build_helper(self.missing_value_name)
+        missing_value_gen = gen.maybe(
+            gen.batch(
+                missing_value_name_gen,
+                (0, self.missing_value_length_max),
+                unique=True,
+            ),
+            1 - self.undefined_prob
+        )
+        return gen.string_field_type(
+            required=required_gen,
+            unique=unique_gen,
+            minLength=minLength_gen,
+            maxLength=maxLength_gen,
+            missingValues=missing_value_gen,
+        )
+
+
+class EnumStringFieldType(GenCfgBase[m.EnumStringFieldType]):
+    type: t.Literal["enum_string_field_type"] = "enum_string_field_type"
+    label_name: GenCfgProxy[str] = default_gencfg_field(SnakeCaseCapsName)
+    n_levels_range: t.Tuple[int, int] = (2, 10)
+    required_prob: float = 0.5
+    unique_prob: float = 0.5
+    ordered_prob: float = 0.5
+    undefined_prob: float = 0.5
+    missing_value_name: GenCfgProxy[str] = default_gencfg_field(
+        MissingValueName
+    )
+    missing_value_length_max: int = 5
+
+    @property
+    def return_type(self) -> t.Type[m.EnumStringFieldType]:
+        return m.EnumStringFieldType
+
+    def build(self) -> gen.RandGen[m.EnumStringFieldType]:
+        required_gen = gen.maybe(
+            gen.boolean(self.required_prob),
+            1 - self.undefined_prob,
+        )
+
+        unique_gen = gen.maybe(
+            gen.boolean(self.unique_prob),
+            1 - self.undefined_prob,
+        )
+
+        ordered_gen = gen.maybe(
+            gen.boolean(self.ordered_prob),
+            1 - self.undefined_prob,
+        )
+
+        label_name_gen = build_helper(self.label_name)
+
+        label_names_gen = gen.batch(
+            label_name_gen,
+            self.n_levels_range,
+            unique=True,
+        )
+
+        missing_value_name_gen = build_helper(self.missing_value_name)
+
+        missing_value_gen = gen.maybe(
+            gen.batch(
+                missing_value_name_gen,
+                (0, self.missing_value_length_max),
+                unique=True,
+            ),
+            1 - self.undefined_prob
+        )
+
+        return gen.enum_string_field_type(
+            levels=label_names_gen,
+            required=required_gen,
+            unique=unique_gen,
+            ordered=ordered_gen,
+            missingValues=missing_value_gen,
+        )
+
+
+class MetaGroup(GenCfgBase[TupleSeq[m.FieldMeta]]):
+    type: t.Literal["meta_group"] = "meta_group"
+    group_name: GenCfgProxy[str] = default_gencfg_field(CamelCaseName)
+    n_range: t.Tuple[int, int] = (3, 15)
+    field_name: GenCfgProxy[str] = default_gencfg_field(CamelCaseName)
+    title: GenCfgProxy[str] = default_gencfg_field(Sentence)
+    description: GenCfgProxy[str] = default_gencfg_field(Sentence)
+    undefined_prob: float = 0.5
+
+    @property
+    def return_type(self) -> t.Type[TupleSeq[m.FieldMeta]]:
+        return TupleSeq[m.FieldMeta]
+
+    def build(self) -> gen.RandGen[TupleSeq[m.FieldMeta]]:
+        group_name_gen = gen.unique(build_helper(self.group_name))
+
+        title_gen = gen.maybe(
+            build_helper(self.title),
+            1 - self.undefined_prob
+        )
+        description_gen = gen.maybe(
+            build_helper(self.description),
+            1 - self.undefined_prob
+        )
+
+        def fn(state: gen.RandState) -> TupleSeq[m.FieldMeta]:
+            group_name = group_name_gen(state)
+
+            name_gen = gen.local_unique(gen.mapper(
+                build_helper(self.field_name),
+                lambda x: group_name + "_" + x,
+            ))
+
+            meta_gen = gen.field_meta(name_gen, title_gen, description_gen)
+
+            meta_field_gen = gen.batch(
+                meta_gen,
+                self.n_range,
+                unique=False,
             )
+
+            return meta_field_gen(state)
+
         return fn
 
 
-GenCfg = Word | Integer | Batch[t.Any] | Maybe[t.Any] | Unique[t.Any] | Seq[t.Any] | Interval
+class FieldGroup(GenCfgBase[TupleSeq[m.Field[m.FieldType]]]):
+    type: t.Literal["field_group"] = "field_group"
+    group_meta: GenCfgProxy[TupleSeq[m.FieldMeta]] = default_gencfg_field(
+        MetaGroup
+    )
+    field_type: GenCfgProxy[m.FieldType] = default_gencfg_field(
+        IntegerFieldType,
+        EnumIntegerFieldType,
+        NumberFieldType,
+        StringFieldType,
+        EnumStringFieldType,
+    )
+
+    @property
+    def return_type(self) -> t.Type[TupleSeq[m.Field[m.FieldType]]]:
+        return TupleSeq[m.Field[m.FieldType]]
+
+    def build(self) -> gen.RandGen[TupleSeq[m.Field[m.FieldType]]]:
+        group_meta_gen = build_helper(self.group_meta)
+        field_type_gen = build_helper(self.field_type)
+
+        return gen.field_group(
+            group_meta_gen,
+            field_type_gen,
+        )
+
+
+class LikertFieldGroup(GenCfgBase[TupleSeq[m.Field[m.FieldType]]]):
+    type: t.Literal["likert_field_group"] = "likert_field_group"
+    group_meta: GenCfgProxy[TupleSeq[m.FieldMeta]] = default_gencfg_field(
+        MetaGroup
+    )
+    field_type: GenCfgProxy[m.IntegerFieldType] = default_gencfg_field(
+        IntegerFieldType,
+    )
+
+    @property
+    def return_type(self) -> t.Type[TupleSeq[m.Field[m.FieldType]]]:
+        return TupleSeq[m.Field[m.FieldType]]
+
+    def build(self) -> gen.RandGen[TupleSeq[m.Field[m.FieldType]]]:
+        group_meta_gen = build_helper(self.group_meta)
+        field_type_gen = build_helper(self.field_type)
+
+        return gen.field_group(
+            group_meta_gen,
+            field_type_gen,
+        )
+
+
+# All generators
+GenCfg = (
+    Word |
+    Integer |
+    Interval |
+    Sentence |
+    SnakeCaseName |
+    CamelCaseName |
+    KebabCaseName |
+    SnakeCaseCapsName |
+    IntegerFieldType |
+    EnumIntegerFieldType |
+    NumberFieldType |
+    MissingValueName |
+    StringFieldType |
+    EnumStringFieldType |
+    Batch[t.Any] |
+    Maybe[t.Any] |
+    Unique[t.Any] |
+    Seq[t.Any] |
+    Choice[t.Any] |
+    FieldGroup |
+    LikertFieldGroup |
+    MetaGroup
+)
 
 
 def parse_gencfg(raw: t.Any) -> GenCfg:
@@ -221,9 +682,6 @@ class GenCfgProxy(RootModel[GenCfg], t.Generic[T]):
             # If the class generic is Any, then we don't care about the return type
             return v
 
-        print(gencfg_return_type)
-        print(class_generic_type)
-
         if not is_subset_type(gencfg_return_type, class_generic_type):
             raise ValueError(
                 f"Expected child return type {class_generic_type} but got {gencfg_return_type}")
@@ -235,10 +693,10 @@ class GenCfgProxy(RootModel[GenCfg], t.Generic[T]):
         arg: t.Any = self.root.return_type
         return arg
 
-    def build(self) -> RandGen[T]:
+    def build(self) -> gen.RandGen[T]:
         child_gen = self.root.build()
 
-        def fn(state: RandState) -> T:
+        def fn(state: gen.RandState) -> T:
             result: t.Any = child_gen(state)
             return result
         return fn

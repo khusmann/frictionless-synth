@@ -1,15 +1,15 @@
-import typing as t
+# import typing as t
 from . import generators as gen
 from . import config as cfg
+# from . import models as m
 
 rnd_state = gen.RandState()
 
 
 def cli():
     # print(gen.batch(gen.enum_string_field_type(), 200)(rnd_state))
-    print(gen.package()(rnd_state))
     print(cfg.Word())
-    g = (cfg.Seq[t.Optional[str] | str | t.Tuple[int, int]].model_validate(
+    g = (cfg.parse_gencfg(
         {
             "type": "seq",
             "children": [{
@@ -20,7 +20,7 @@ def cli():
                 },
                 "prob": 0.5,
             },
-                {"type": "word"},
+                {"type": "field_group"},
                 {
                     "type": "interval",
                     "start_min": -10, "start_max": 10, "length_min": 1, "length_max": 10,
