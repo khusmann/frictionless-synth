@@ -108,7 +108,7 @@ class MissingValueName(GenCfgBase[str]):
 
 class Integer(GenCfgBase[int]):
     type: t.Literal["integer"] = "integer"
-    min: int = -1000
+    min: int = 0
     max: int = 1000
 
     @property
