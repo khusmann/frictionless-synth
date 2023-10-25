@@ -1,7 +1,7 @@
 [project]
-name = "faker-frictionless"
+name = "frictionless-synth"
 version = "0.0.1"
-description = "Fake frictionless data generator"
+description = "Frictionless synthetic data generator"
 requires-python = ">=3.11"
 dependencies = [
     "click>=8.1",
@@ -13,7 +13,7 @@ where = ["src"]
 exclude = ["tests*"]
 
 [tool.setuptools.package-data]
-"faker_frictionless" = ["py.typed"]
+"frictionless_synth" = ["py.typed"]
 
 [project.scripts]
-ffaker = "faker_frictionless.tests:cli"
+flssynth = "frictionless_synth.cli:cli"
