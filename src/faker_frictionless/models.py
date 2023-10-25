@@ -71,13 +71,15 @@ class Field(t.Generic[FieldT]):
 
 class TableSchema(t.NamedTuple):
     fields: TupleSeq[Field[FieldType]]
-    missingValues: t.Optional[TupleSeq[str]] = None
+    n_rows: int
+    missingValues: t.Optional[TupleSeq[str]]
 
 
 class TableResource(t.NamedTuple):
     name: str
     description: t.Optional[str]
     schema: TableSchema
+    data: t.Sequence[t.Mapping[str, str]]
 
 
 class Package(t.NamedTuple):

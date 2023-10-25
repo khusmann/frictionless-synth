@@ -198,11 +198,17 @@ def integer_field_type(
     missingValues: RandGen[t.Optional[TupleSeq[str]]],
 ) -> RandGen[m.IntegerFieldType]:
     def fn(state: RandState) -> m.IntegerFieldType:
+        l1 = minimum(state)
+        l2 = maximum(state)
         return m.IntegerFieldType(
             required=required(state),
             unique=unique(state),
-            minimum=minimum(state),
-            maximum=maximum(state),
+            minimum=min(l1, l2) if (
+                l1 is not None and l2 is not None
+            ) else l1,
+            maximum=max(l1, l2) if (
+                l1 is not None and l2 is not None
+            ) else l2,
             missingValues=missingValues(state),
         )
     return fn
@@ -372,11 +378,13 @@ def field_group(
 def table_schema(
     fields: RandGen[TupleSeq[m.Field[m.FieldType]]],
     missingValues: RandGen[t.Optional[TupleSeq[str]]],
+    n_rows: RandGen[int],
 ):
     def fn(state: RandState) -> m.TableSchema:
         return m.TableSchema(
             fields=fields(state),
             missingValues=missingValues(state),
+            n_rows=n_rows(state),
         )
     return fn
 
@@ -387,10 +395,13 @@ def table_resource(
     schema: RandGen[m.TableSchema],
 ):
     def fn(state: RandState) -> m.TableResource:
+        curr_schema = schema(state)
+        curr_table_data = table_data(curr_schema)(state)
         return m.TableResource(
             name=name(state),
             description=description(state),
-            schema=schema(state),
+            schema=curr_schema,
+            data=curr_table_data,
         )
     return fn
 
@@ -406,4 +417,54 @@ def package(
             description=description(state),
             resources=resources(state),
         )
+    return fn
+
+
+#################################################
+
+def field_data(field: m.FieldType) -> RandGen[str]:
+    import sys
+
+    def fn(state: RandState) -> str:
+        match field:
+            case m.IntegerFieldType(
+                minimum=minimum,
+                maximum=maximum,
+            ):
+                minimum = 0 if minimum is None else minimum
+                maximum = sys.maxsize if maximum is None else maximum
+                return str(integer(minimum, maximum)(state))
+            case m.EnumIntegerFieldType(
+                levels=levels,
+            ):
+                return str(choice([lambda _: l.value for l in levels])(state))
+            case m.NumberFieldType(
+                minimum=minimum,
+                maximum=maximum,
+            ):
+                minimum = 0 if minimum is None else minimum
+                maximum = sys.maxsize if maximum is None else maximum
+                return str(number(minimum, maximum)(state))
+            case m.StringFieldType():
+                return word()(state)
+            case m.EnumStringFieldType(
+                levels=levels,
+            ):
+                return choice([lambda _: l for l in levels])(state)
+    return fn
+
+
+def table_data(schema: m.TableSchema) -> RandGen[t.Sequence[t.Mapping[str, str]]]:
+    column_names = tuple([f.meta.name for f in schema.fields])
+    row_gen = mapper(
+        seq(
+            tuple(
+                field_data(f.type) for f in schema.fields
+            )
+        ),
+        lambda r: dict(zip(column_names, r))
+    )
+
+    def fn(state: RandState) -> t.Sequence[t.Mapping[str, str]]:
+        return batch(row_gen, schema.n_rows, unique=False)(state)
     return fn

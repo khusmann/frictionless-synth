@@ -235,8 +235,8 @@ class IntegerFieldType(GenCfgBase[m.IntegerFieldType]):
     required_prob: float = 0.5
     unique_prob: float = 0.5
     undefined_prob: float = 0.5
-    minimum_range: t.Tuple[int, int] = (-1000, 1000)
-    maximum_range: t.Tuple[int, int] = (-1000, 1000)
+    minimum_range: t.Tuple[int, int] = (0, 1000)
+    maximum_range: t.Tuple[int, int] = (0, 1000)
     missing_value_name: GenCfgProxy[str] = default_gencfg_field(
         MissingValueName
     )
@@ -349,8 +349,8 @@ class NumberFieldType(GenCfgBase[m.NumberFieldType]):
     required_prob: float = 0.5
     unique_prob: float = 0.5
     undefined_prob: float = 0.5
-    minimum_range: t.Tuple[int, int] = (-1000, 1000)
-    maximum_range: t.Tuple[int, int] = (-1000, 1000)
+    minimum_range: t.Tuple[int, int] = (0, 1000)
+    maximum_range: t.Tuple[int, int] = (0, 1000)
     missing_value_name: GenCfgProxy[str] = default_gencfg_field(
         MissingValueName
     )
@@ -608,6 +608,7 @@ class TableSchema(GenCfgBase[m.TableSchema]):
     fields: GenCfgProxy[TupleSeq[m.Field[m.FieldType]]] | TupleSeq[GenCfgProxy[TupleSeq[m.Field[m.FieldType]]]] = default_gencfg_field(
         FieldGroup,
     )
+    n_rows_range: t.Tuple[int, int] = (10, 1000)
     missing_value_name: GenCfgProxy[str] = default_gencfg_field(
         MissingValueName
     )
@@ -637,9 +638,12 @@ class TableSchema(GenCfgBase[m.TableSchema]):
             1 - self.undefined_prob
         )
 
+        n_rows_gen = gen.integer(*self.n_rows_range)
+
         return gen.table_schema(
             fields_gen,
-            missing_value_gen
+            missing_value_gen,
+            n_rows_gen,
         )
 
 
