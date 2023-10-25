@@ -1,1 +1,1 @@
-# faker-frictionless
+# frictionless-synth
