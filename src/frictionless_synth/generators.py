@@ -76,8 +76,12 @@ def seq(gen: TupleSeq[RandGen[T]]) -> RandGen[TupleSeq[T]]:
 
 
 def seq_flat(gen: TupleSeq[RandGen[TupleSeq[T]]]) -> RandGen[TupleSeq[T]]:
+    return flatten(seq(gen))
+
+
+def flatten(gen: RandGen[TupleSeq[TupleSeq[T]]]) -> RandGen[TupleSeq[T]]:
     def fn(state: RandState) -> TupleSeq[T]:
-        return tuple([item for sublist in [g(state) for g in gen] for item in sublist])
+        return tuple([item for sublist in gen(state) for item in sublist])
     return fn
 
 

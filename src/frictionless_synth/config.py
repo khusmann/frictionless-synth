@@ -605,9 +605,10 @@ class LikertFieldGroup(GenCfgBase[TupleSeq[m.Field[m.FieldType]]]):
 
 class TableSchema(GenCfgBase[m.TableSchema]):
     type: t.Literal["table_schema"] = "table_schema"
-    fields: GenCfgProxy[TupleSeq[m.Field[m.FieldType]]] | TupleSeq[GenCfgProxy[TupleSeq[m.Field[m.FieldType]]]] = default_gencfg_field(
-        FieldGroup,
+    field_group: GenCfgProxy[TupleSeq[m.Field[m.FieldType]]] = default_gencfg_field(
+        FieldGroup, LikertFieldGroup
     )
+    n_field_groups_range: t.Tuple[int, int] = (3, 10)
     n_rows_range: t.Tuple[int, int] = (10, 1000)
     missing_value_name: GenCfgProxy[str] = default_gencfg_field(
         MissingValueName
@@ -620,12 +621,13 @@ class TableSchema(GenCfgBase[m.TableSchema]):
         return m.TableSchema
 
     def build(self) -> gen.RandGen[m.TableSchema]:
-        if isinstance(self.fields, GenCfgProxy):
-            fields_gen = build_helper(self.fields)
-        else:
-            fields_gen = gen.seq_flat(
-                tuple(build_helper(field) for field in self.fields)
+        fields_gen = gen.flatten(
+            gen.batch(
+                build_helper(self.field_group),
+                self.n_field_groups_range,
+                unique=False
             )
+        )
 
         missing_value_name_gen = build_helper(self.missing_value_name)
 
@@ -678,7 +680,7 @@ class Package(GenCfgBase[m.Package]):
     resource: GenCfgProxy[m.TableResource] = default_gencfg_field(
         TableResource,
     )
-    n_resources: int | t.Tuple[int, int] = (1, 5)
+    n_resources: int | t.Tuple[int, int] = (2, 7)
 
     @property
     def return_type(self) -> t.Type[m.Package]:
