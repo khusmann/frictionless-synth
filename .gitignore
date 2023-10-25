@@ -7,3 +7,4 @@ __pycache__/
 pip-log.txt
 pip-delete-this-directory.txt
 .Rproj.user
+synth_package.json
